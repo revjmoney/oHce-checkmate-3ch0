@@ -1,4 +1,4 @@
-# oChe-checkmate-3ch0 🐒🔓
+# oHce-checkmate-3ch0 🐒🔓
 ### Liberating the Amazon Echo Show 5 (2nd gen, codename **CRONOS**) — root, de-bloat, de-spy, and run your own apps.
 
 ![See no evil · hear no evil · speak no evil](screenshots/see-hear-speak-banner.png)
