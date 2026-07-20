@@ -74,7 +74,7 @@ Part of the **Simian Tactical Toolbox**. 🐒🔫
 ## 📦 Repo contents
 
 ```
-oChe-checkmate-3ch0/
+oHce-checkmate-3ch0/
 ├── README.md                     ← you are here
 ├── HOWTO.md                      ← the full, step-by-step, reproducible process
 ├── LICENSE                       ← MIT (author's own code)
