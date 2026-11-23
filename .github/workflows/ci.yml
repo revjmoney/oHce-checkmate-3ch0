@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.apk }}.apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: displayoff
+            pkg: com/rev/displayoff
+            apk: DisplayOff
+          - app: godmode
+            pkg: com/rev/godmode
+            apk: GodMode
+          - app: webctl
+            pkg: com/rev/webctl
+            apk: WebControl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android platform 35 and build-tools 35.0.0
+        run: |
+          ls "$ANDROID_HOME/build-tools" "$ANDROID_HOME/platforms" || true
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      - name: Build (same steps as apps/${{ matrix.app }}/build.ps1)
+        working-directory: apps/${{ matrix.app }}
+        env:
+          PKG: ${{ matrix.pkg }}
+          APK: ${{ matrix.apk }}
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          AJAR="$ANDROID_HOME/platforms/android-35/android.jar"
+          rm -rf obj out
+          mkdir -p obj out
+          echo "[1/6] aapt2 compile + link"
+          "$BT/aapt2" compile --dir res -o out/res-compiled.zip
+          "$BT/aapt2" link --manifest AndroidManifest.xml -I "$AJAR" \
+            --min-sdk-version 21 --target-sdk-version 25 \
+            -o out/base.apk out/res-compiled.zip
+          echo "[2/6] javac"
+          javac --release 11 -classpath "$AJAR" -d obj src/$PKG/*.java
+          echo "[3/6] d8"
+          java -cp "$BT/lib/d8.jar" com.android.tools.r8.D8 --min-api 21 --lib "$AJAR" --output out obj/$PKG/*.class
+          echo "[4/6] add classes.dex"
+          (cd out && jar uf base.apk classes.dex)
+          echo "[5/6] zipalign"
+          "$BT/zipalign" -f 4 out/base.apk out/aligned.apk
+          echo "[6/6] sign with a throwaway CI key"
+          export KS_PASS="$(openssl rand -hex 16)"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/ci.jks" -storepass "$KS_PASS" -keypass "$KS_PASS" \
+            -alias ci -keyalg RSA -keysize 2048 -validity 30 -dname "CN=CI build" > /dev/null 2>&1
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/ci.jks" --ks-pass env:KS_PASS --key-pass env:KS_PASS \
+            --out "out/$APK.apk" out/aligned.apk
+          "$BT/apksigner" verify "out/$APK.apk"
+          ls -l "out/$APK.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.apk }}-apk
+          path: apps/${{ matrix.app }}/out/${{ matrix.apk }}.apk
+          retention-days: 30
+          if-no-files-found: error
+
+  guard:
+    name: Private data guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block home IPs, personal email, tokens, keys and secret project names
+        run: |
+          found=0
+          if git grep -n -I -E '192\.168\.1\.[0-9]+|myemail937|ghp_[A-Za-z0-9]{20,}|github_pat_|-----BEGIN [A-Z ]*PRIVATE KEY' -- . ':!.github/workflows/ci.yml'; then found=1; fi
+          if git grep -n -I -i -E 'rose.?engine|guilloche|gen-rose' -- . ':!.github/workflows/ci.yml'; then found=1; fi
+          if [ "$found" = 1 ]; then
+            echo "::error::Private data pattern found. Remove it before merging."
+            exit 1
+          fi
+          echo "Guard clean."
