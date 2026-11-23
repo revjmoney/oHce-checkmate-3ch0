@@ -75,7 +75,7 @@ jobs:
             --out "out/$APK.apk" out/aligned.apk
           "$BT/apksigner" verify "out/$APK.apk"
           ls -l "out/$APK.apk"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.apk }}-apk
           path: apps/${{ matrix.app }}/out/${{ matrix.apk }}.apk
